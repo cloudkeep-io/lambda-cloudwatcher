@@ -1,0 +1,37 @@
+name: Build and Release Lambda Package
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Build Lambda package in Amazon Linux 2 container
+      run: |
+        docker run --rm -v $PWD:/var/task:z --entrypoint /bin/bash amazon/aws-lambda-python:3.11 -c "
+          yum install -y zip && 
+          pip install poetry && 
+          poetry install && 
+          poetry run pip install -r <(poetry export -f requirements.txt --without-hashes) -t ./package && 
+          cp -r *.py package/ && 
+          cd package && 
+          zip -r ../${{ github.event.repository.name }}-${{ github.ref_name }}.zip ."
+          
+    - name: Setup GitHub CLI
+      run: |
+        sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key C99B11DEB97541F0
+        sudo apt-add-repository https://cli.github.com/packages
+        sudo apt update
+        sudo apt install gh
+
+    - name: Create GitHub Release and Upload Artifact
+      run: |
+        gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
+        gh release create ${{ github.ref_name }} ${{ github.event.repository.name }}-${{ github.ref_name }}.zip -t "Release ${{ github.ref_name }}" -n "Auto-generated release from GitHub Actions."
